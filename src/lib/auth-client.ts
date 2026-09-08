@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export type RealmrootSession = {
+  offline?: boolean;
   session: { id: string; expiresAt: string; csrfToken: string };
   user: { id: string; tenantId: string; name: string; email: string; image?: string | null; role: string };
 };

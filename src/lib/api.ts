@@ -226,6 +226,9 @@ export const api = {
     },
     get: (id: string) => request<any>("GET", `/agents/${encodeURIComponent(id)}`),
   },
+  offline: {
+    runTask: (id: string) => request<{ runId: string; status: string }>("POST", `/offline/tasks/${encodeURIComponent(id)}/run`),
+  },
   machines: {
     list: (params?: { pageSize?: number; pageToken?: string }) => {
       const query = new URLSearchParams();

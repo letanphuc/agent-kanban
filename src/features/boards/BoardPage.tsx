@@ -1,13 +1,17 @@
+import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 import { FilterBar } from "@/features/boards/components/FilterBar";
 import { AgentAvatarOverlay } from "@/features/boards/components/FloatingAvatar";
 import { Header } from "@/features/boards/components/Header";
 import { KanbanColumn } from "@/features/boards/components/KanbanColumn";
 import { useAgentPresence } from "@/features/boards/hooks/useAgentPresence";
 import { useBoard } from "@/features/boards/hooks/useBoard";
+import { OfflineTaskDialog } from "@/features/tasks/components/OfflineTaskDialog";
 import { TaskChatDrawer } from "@/features/tasks/components/TaskChatDrawer";
 import { TaskDetail } from "@/features/tasks/components/TaskDetail";
+import { useSession } from "@/lib/auth-client";
 
 const TASK_STATUSES = ["todo", "in_progress", "in_review", "done", "cancelled"] as const;
 
@@ -22,8 +26,10 @@ const TASK_STATUS_LABELS: Record<string, string> = {
 export function BoardPage() {
   const { boardId } = useParams<{ boardId: string }>();
   const { board, loading, error, refresh } = useBoard(boardId);
+  const { data: session } = useSession();
   const avatars = useAgentPresence(boardId);
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const [creatingTask, setCreatingTask] = useState(false);
   const [chatTask, setChatTask] = useState<any | null>(null);
   const [activeRepository, setActiveRepository] = useState<string | null>(null);
   const [activeLabel, setActiveLabel] = useState<string | null>(null);
@@ -91,6 +97,14 @@ export function BoardPage() {
   return (
     <div className="h-screen overflow-hidden bg-surface-primary flex flex-col">
       <Header />
+      {session?.offline && (
+        <div className="flex justify-end border-b border-border px-5 py-2.5">
+          <Button size="sm" onClick={() => setCreatingTask(true)}>
+            <Plus className="size-3.5" />
+            Create Task
+          </Button>
+        </div>
+      )}
       <FilterBar
         repositories={repositories}
         labels={board.labels ?? []}
@@ -141,6 +155,8 @@ export function BoardPage() {
       </div>
 
       <AgentAvatarOverlay avatars={avatars} />
+
+      <OfflineTaskDialog boardId={board.id} open={creatingTask} onOpenChange={setCreatingTask} onCreated={refresh} />
 
       {selectedTask && (
         <TaskDetail

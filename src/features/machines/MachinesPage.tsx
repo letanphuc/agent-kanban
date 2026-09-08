@@ -16,9 +16,11 @@ import {
   useMachine,
   useMachines,
 } from "@/features/machines/useMachines";
+import { useSession } from "@/lib/auth-client";
 
 export function MachinesPage() {
   const queryClient = useQueryClient();
+  const { data: session } = useSession();
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageTokens, setPageTokens] = useState<(string | undefined)[]>([undefined]);
@@ -111,16 +113,18 @@ export function MachinesPage() {
             <h1 className="text-xl font-bold text-content-primary">Machines</h1>
             <p className="mt-1 text-sm text-content-tertiary">Computers available to run agent work.</p>
           </div>
-          <Button
-            size="sm"
-            onClick={() => {
-              create.reset();
-              setAdding(true);
-            }}
-          >
-            <Plus className="size-3.5" />
-            Add Machine
-          </Button>
+          {!session?.offline && (
+            <Button
+              size="sm"
+              onClick={() => {
+                create.reset();
+                setAdding(true);
+              }}
+            >
+              <Plus className="size-3.5" />
+              Add Machine
+            </Button>
+          )}
         </div>
         {error ? (
           <div className="space-y-3">

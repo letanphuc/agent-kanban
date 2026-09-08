@@ -2,6 +2,7 @@ import type { RuntimeName } from "@realmroot/enbor-sdk";
 import { createAgentPermissionGateway } from "@server/adapters/realmroot/agentPermissions";
 import { delegatedResourceToken } from "@server/adapters/realmroot/delegatedAgencyToken";
 import { authorizeScope } from "@server/auth/middleware";
+import { isOfflineMode } from "@server/auth/offline";
 import type { Env } from "@server/env";
 import { agentRepresentation } from "@server/http/agents/representation";
 import { idempotencyMiddleware } from "@server/http/middleware/idempotency";
@@ -14,6 +15,7 @@ import {
   externalCreationIdempotencyKey,
   readJsonBody,
 } from "@server/http/resource-server/request";
+import { executorHealth, LOCAL_AGENT_ID, localAgent } from "@server/offline/executor";
 import { grantDefaultAgentPermissions } from "@server/usecases/agents/defaultPermissions";
 import { createAgencyAgent } from "@server/usecases/agents/projectAgents";
 import { AGENCY_RUNTIMES } from "@shared";
@@ -102,10 +104,19 @@ export function registerAgentRoutes(api: Hono<{ Bindings: Env }>): void {
   api.get("/api/agents", authorizeScope("agent:read"), async (c) => {
     const page = await readExternalPage(c);
     if (page instanceof Response) return page;
-    const { client } = await agencyDependencies(c, ["agents:read"]);
     const schedulable = optionalBoolean(c.req.query("schedulable"));
     const runtime = optionalRuntime(c.req.query("runtime"));
     const search = optionalBoundedString(c.req.query("search"), "search", 160);
+    if (isOfflineMode(c)) {
+      const online = (await executorHealth(c.env))?.online === true;
+      const agent = localAgent(c.req.url, online);
+      const matches =
+        (!search || `${agent.name} ${agent.username}`.toLowerCase().includes(search.toLowerCase())) &&
+        (!runtime || runtime === agent.runtime) &&
+        (schedulable === undefined || schedulable === agent.schedulable);
+      return externalPageResponse(c, matches && !page.sourceCursor ? [agent] : [], null);
+    }
+    const { client } = await agencyDependencies(c, ["agents:read"]);
     const result = await client.agents.list({
       limit: page.pageSize,
       cursor: page.sourceCursor ?? undefined,
@@ -121,6 +132,12 @@ export function registerAgentRoutes(api: Hono<{ Bindings: Env }>): void {
   });
 
   api.get("/api/agents/:agentId", authorizeScope("agent:read"), async (c) => {
+    if (isOfflineMode(c)) {
+      if (c.req.param("agentId") !== LOCAL_AGENT_ID) throw new HTTPException(404, { message: "Agent not found" });
+      const represented = localAgent(c.req.url, (await executorHealth(c.env))?.online === true);
+      c.header("ETag", await representationEtag(represented));
+      return c.json(represented);
+    }
     const { client } = await agencyDependencies(c, ["agents:read"]);
     const agent = await client.agents.get(c.req.param("agentId")!);
     const represented = agentRepresentation(agent, c.req.url);

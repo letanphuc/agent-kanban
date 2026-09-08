@@ -9,6 +9,7 @@ import { createAccessLogMiddleware } from "@server/http/middleware/accessLog";
 import { resourceServerErrorHandler } from "@server/http/middleware/idempotency";
 import { requestContextMiddleware } from "@server/http/middleware/requestContext";
 import { isPublishedV2Operation, v2ApiVersionMiddleware } from "@server/http/middleware/v2Contract";
+import { registerOfflineTaskRoutes } from "@server/http/offline/routes";
 import { registerPublicRoutes } from "@server/http/public/routes";
 import { registerRepositoryRoutes } from "@server/http/repositories/routes";
 import { registerResourceServerRoutes } from "@server/http/resource-server/routes";
@@ -37,6 +38,7 @@ api.use("/api/*", (c, next) => (c.req.path.startsWith("/api/auth/") ? next() : a
 api.use("/api/*", (c, next) => (c.req.path.startsWith("/api/auth/") ? next() : csrfProtectionMiddleware(c, next)));
 api.use("/api/*", (c, next) => (c.req.path.startsWith("/api/auth/") ? next() : principalProvisioningMiddleware(c, next)));
 
+registerOfflineTaskRoutes(api);
 registerTaskWorkflowRoutes(api);
 registerTaskResourceRoutes(api);
 registerBoardRoutes(api);

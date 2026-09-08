@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
 import { useEffect, useState } from "react";
@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AgentAvatar, useAgentProfile } from "@/features/agent-identity";
 import { LabelChip } from "@/features/boards/components/LabelChip";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/auth-client";
 import { useSSE } from "../hooks/useSSE";
 import { ActivityLog } from "./ActivityLog";
 import { SubtaskList } from "./SubtaskList";
@@ -84,6 +85,7 @@ function LiveDuration({ startedAt, finishedMinutes }: { startedAt: string | null
 
 export function TaskDetail({ taskId, labels = [], onClose, onRefresh, onAgentClick: _onAgentClick }: TaskDetailProps) {
   const queryClient = useQueryClient();
+  const { data: session } = useSession();
   const [chatOpen, setChatOpen] = useState(false);
   const { notes: sseNotes, reconnecting } = useSSE({ taskId, enabled: true });
   const labelByName = new Map(labels.map((label) => [label.name, label]));
@@ -121,6 +123,14 @@ export function TaskDetail({ taskId, labels = [], onClose, onRefresh, onAgentCli
     await reload();
     onRefresh();
   }
+
+  const localRun = useMutation({
+    mutationFn: () => api.offline.runTask(taskId),
+    onSuccess: async () => {
+      await reload();
+      onRefresh();
+    },
+  });
 
   const content = loading ? (
     <div className="p-6 space-y-4">
@@ -208,6 +218,19 @@ export function TaskDetail({ taskId, labels = [], onClose, onRefresh, onAgentCli
           }
         />
       </div>
+
+      {session?.offline && (task.status === "todo" || (task.status === "in_progress" && task.assigned_to === "local-prime-agent")) && (
+        <div className="space-y-2">
+          <Button size="sm" disabled={localRun.isPending || task.blocked} onClick={() => localRun.mutate()}>
+            {localRun.isPending ? "Starting Prime Agent…" : task.status === "in_progress" ? "Retry Local Run" : "Run with Prime Agent"}
+          </Button>
+          {localRun.error && (
+            <p role="alert" className="text-sm text-error">
+              {localRun.error.message}
+            </p>
+          )}
+        </div>
+      )}
 
       {task.status === "in_review" && (
         <div className="flex gap-2">

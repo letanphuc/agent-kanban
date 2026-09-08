@@ -1,4 +1,11 @@
-import { authenticateWebSession, readRealmrootWebSession, validateCsrfToken, WEB_SESSION_SCOPES } from "@server/auth/realmroot";
+import {
+  AuthError,
+  authenticateWebSession,
+  type RealmrootPrincipal,
+  readRealmrootWebSession,
+  validateCsrfToken,
+  WEB_SESSION_SCOPES,
+} from "@server/auth/realmroot";
 import { akPublicUrl } from "@server/config/serviceUrls";
 import type { Env } from "@server/env";
 import type { Context } from "hono";
@@ -21,6 +28,27 @@ export function isOfflineMode(c: Context<{ Bindings: Env }>): boolean {
   if (c.env.AK_OFFLINE_MODE !== "true") return false;
   const urls = [new URL(c.env.AK_PUBLIC_ORIGIN), new URL(c.req.url)];
   return urls.every((url) => (url.protocol === "http:" || url.protocol === "https:") && isLoopbackHostname(url.hostname));
+}
+
+export async function authenticateOfflineAgent(c: Context<{ Bindings: Env }>): Promise<RealmrootPrincipal | null> {
+  if (!isOfflineMode(c)) return null;
+  const authorization = c.req.header("authorization");
+  if (!authorization?.startsWith("Bearer ")) return null;
+  const expected = c.env.AK_LOCAL_AGENT_TOKEN;
+  if (!expected || !(await validateCsrfToken(authorization.slice(7), expected))) return null;
+  const sessionId = c.req.header("x-prime-session-id");
+  if (!sessionId || sessionId.length > 200) throw new AuthError("X-Prime-Session-Id is required");
+  return {
+    source: "token",
+    type: "agent",
+    subjectId: "local-prime-agent",
+    actorId: "local-prime-agent",
+    controllerSubjectId: "offline-user",
+    runtime: "enbor",
+    runtimeSessionId: sessionId,
+    tenantId: "offline",
+    scopes: ["task:read", "task:write", "task:claim"],
+  };
 }
 
 export async function beginOfflineSession(c: Context<{ Bindings: Env }>): Promise<Response> {
@@ -100,6 +128,7 @@ async function createOfflineSession(c: Context<{ Bindings: Env }>): Promise<{ se
 
 function sessionRepresentation(session: OfflineSession) {
   return {
+    offline: true,
     session: { id: session.id, expiresAt: session.expiresAt, csrfToken: session.csrfToken },
     user: {
       id: session.subjectId,

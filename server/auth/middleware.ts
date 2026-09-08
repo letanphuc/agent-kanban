@@ -1,3 +1,4 @@
+import { authenticateOfflineAgent } from "@server/auth/offline";
 import {
   AuthError,
   authenticateRealmrootToken,
@@ -12,7 +13,8 @@ import type { Context, Next } from "hono";
 
 export async function authenticationMiddleware(c: Context<{ Bindings: Env }>, next: Next) {
   try {
-    const principal = c.req.header("authorization") ? await authenticateRealmrootToken(c) : await authenticateWebSession(c);
+    const principal =
+      (await authenticateOfflineAgent(c)) ?? (c.req.header("authorization") ? await authenticateRealmrootToken(c) : await authenticateWebSession(c));
     if (!principal) return authenticationFailure(c, "Authentication required");
     c.set("principal", principal);
     c.set("ownerId", principal.tenantId);

@@ -66,6 +66,7 @@ export async function createTask(
   input: CreateTaskInput & {
     actorType?: TaskActionWriteActorType;
     actorId?: string;
+    allowRepositorylessDev?: boolean;
   },
   idempotency?: ResourceIdempotency<Task>,
   sequenceAttempt = 0,
@@ -82,7 +83,7 @@ export async function createTask(
 
   if (!board) throw new ApplicationError("invalid-request", input.board_id ? "Board not found" : "No board exists. Create a board first.");
 
-  if (board.type === "dev" && !input.repository_id) {
+  if (board.type === "dev" && !input.repository_id && !input.allowRepositorylessDev) {
     throw new ApplicationError("invalid-request", "repository_id is required for dev board tasks");
   }
   if (board.type === "ops" && input.repository_id) {

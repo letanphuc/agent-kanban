@@ -16,8 +16,8 @@ dist/
 Thumbs.db
 
 # Env
-.env
 .env.*
+!.env
 .dev.vars
 
 # Test

@@ -19,6 +19,7 @@ import { d1TaskReviewSubmissionRepository } from "@server/adapters/d1/tasks/d1Ta
 import { requireUserGrant } from "@server/adapters/realmroot/delegatedAgencyToken";
 import { createSSEResponse } from "@server/adapters/stream/sse";
 import { authorizeScope } from "@server/auth/middleware";
+import { isOfflineMode } from "@server/auth/offline";
 import type { Env } from "@server/env";
 import { idempotencyMiddleware } from "@server/http/middleware/idempotency";
 import { v2Problem } from "@server/http/middleware/v2Contract";
@@ -78,7 +79,7 @@ async function createTaskResource(c: TaskContext): Promise<Response> {
   const task = await createTask(
     c.env.DB,
     c.get("ownerId"),
-    { ...body, actorType, actorId },
+    { ...body, actorType, actorId, allowRepositorylessDev: isOfflineMode(c) },
     resourceIdempotencyFor(
       c,
       "tasks",

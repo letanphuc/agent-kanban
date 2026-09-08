@@ -3,6 +3,10 @@ export interface Env {
   ASSETS: Fetcher;
   AK_PUBLIC_ORIGIN: string;
   AK_OFFLINE_MODE?: string;
+  AK_LOCAL_EXECUTOR_ORIGIN?: string;
+  AK_LOCAL_EXECUTOR_TOKEN?: string;
+  AK_LOCAL_AGENT_TOKEN?: string;
+  AK_LOCAL_WORKTREE?: string;
   AK_SIGNING_KEY: string;
   OIDC_ISSUER: string;
   OIDC_WEB_CLIENT_ID: string;

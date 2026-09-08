@@ -29,6 +29,9 @@ the task, identify the discrepancy before treating either as obsolete.
 ## Commands and verification
 
 Use the Node and pnpm versions declared in `package.json`.
+Source `.env` from the repository root for the basic `setup`, `build`, `run`,
+and `test` shell helpers. `run` starts Vite and, in offline mode, the local
+Prime Agent executor. Keep Worker secrets and local settings in `.dev.vars`.
 
 - Local app: `pnpm dev`; local database migrations: `pnpm db:migrate`.
 - Focused tests: `pnpm exec vitest run --project <project> <file> -t '<case>'`.

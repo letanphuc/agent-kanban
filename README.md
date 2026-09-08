@@ -137,8 +137,13 @@ Public configuration and binding names live in [`wrangler.toml`](./wrangler.toml
 
 For single-user offline development, set `AK_OFFLINE_MODE=true` with a loopback
 `AK_PUBLIC_ORIGIN`. AK then creates a local browser session without contacting
-Realmroot. The mode refuses non-loopback public and request URLs; Agent, Machine,
-Session, and GitHub flows that require Realmroot or Enbor remain unavailable.
+Realmroot and starts the configured local Prime Agent process in
+`AK_LOCAL_WORKTREE`. The mode refuses non-loopback public and request URLs.
+
+The runtime paths are deliberately separate: offline localhost uses the local
+session, Prime Agent process, and local Machine; hosted production keeps Realmroot
+identity, permissions, Enbor Sessions, and Runners; a future SSH provider can
+extend the executor transport without changing production authentication.
 
 ## Agent usage
 
