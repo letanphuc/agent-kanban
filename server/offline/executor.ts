@@ -80,7 +80,7 @@ async function executorFetch(env: Env, path: string, init: RequestInit = {}): Pr
       ...Object.fromEntries(new Headers(init.headers)),
       "x-ak-local-executor-token": required(env.AK_LOCAL_EXECUTOR_TOKEN, "AK_LOCAL_EXECUTOR_TOKEN"),
     },
-    signal: AbortSignal.timeout(2_000),
+    signal: AbortSignal.timeout(path.endsWith("/message") ? 30_000 : 2_000),
   });
 }
 

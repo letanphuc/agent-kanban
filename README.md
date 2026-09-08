@@ -140,6 +140,14 @@ For single-user offline development, set `AK_OFFLINE_MODE=true` with a loopback
 Realmroot and starts the configured local Prime Agent process in
 `AK_LOCAL_WORKTREE`. The mode refuses non-loopback public and request URLs.
 
+`Continue with Prime Agent` reuses the live process. If it has exited, the local
+executor opens the same saved session in a new process and verifies its identity
+before sending `continue`. Missing or invalid sessions fail instead of starting
+fresh. This requires the same executor process to remain running; its Task-to-session
+mapping is not persisted across executor restarts.
+
+Check this behavior with `node tests/integration/adapters/local-executor.check.mjs`.
+
 The runtime paths are deliberately separate: offline localhost uses the local
 session, Prime Agent process, and local Machine; hosted production keeps Realmroot
 identity, permissions, Enbor Sessions, and Runners; a future SSH provider can

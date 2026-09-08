@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { timingSafeEqual } from "node:crypto";
-import { statSync } from "node:fs";
+import { randomUUID, timingSafeEqual } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { isAbsolute, resolve } from "node:path";
 
@@ -37,7 +37,7 @@ const server = createServer(async (request, response) => {
       });
     }
     const messageMatch = request.method === "POST" ? request.url?.match(/^\/v1\/tasks\/([^/]+)\/message$/) : null;
-    if (messageMatch) return sendMessage(decodeURIComponent(messageMatch[1]), await readJson(request), response);
+    if (messageMatch) return await sendMessage(decodeURIComponent(messageMatch[1]), await readJson(request), response);
     const match = request.method === "PUT" ? request.url?.match(/^\/v1\/tasks\/([^/]+)$/) : null;
     if (!match) return json(response, 404, { error: "Not found" });
     const body = validateRun(await readJson(request), decodeURIComponent(match[1]));
@@ -64,24 +64,60 @@ const server = createServer(async (request, response) => {
     }
     run.state = "running";
     json(response, 202, { sessionId: run.sessionId, state: run.state });
-    setImmediate(() => execute(run));
+    setImmediate(() => void execute(run).catch((error) => finish(run, 1, "", error.message)));
   } catch (error) {
     json(response, 400, { error: error instanceof Error ? error.message : String(error) });
   }
 });
 
-function sendMessage(taskId, value, response) {
-  const run = [...runs.values()].find((candidate) => candidate.taskId === taskId);
-  if (!run || !run.child || run.child.stdin.destroyed) return json(response, 409, { error: "The Prime Agent session is no longer running" });
-  if (!value || value.prompt !== "continue") return json(response, 400, { error: "Only the continue message is supported" });
+function isRunning(child) {
+  return child && child.exitCode === null && child.signalCode === null && !child.killed && !child.stdin.destroyed;
+}
+
+async function sendMessage(taskId, value, response) {
+  if (value?.prompt !== "continue") return json(response, 400, { error: "Only the continue message is supported" });
+  const run = [...runs.values()].findLast((candidate) => candidate.taskId === taskId);
+  // ponytail: run mappings live in this executor; persist them if executor-restart recovery is needed.
+  if (!run) return json(response, 409, { error: "No local session is known for this Task" });
+  if (run.pendingReport) return json(response, 409, { error: "The previous Task result is still being reported" });
+  if (run.starting) return json(response, 409, { error: "The Prime Agent session is starting" });
+  const active = activeRuns.get(run.cwd);
+  if (active && active !== run) return json(response, 409, { error: "The local Workspace is busy" });
+  if (!isRunning(run.child)) {
+    if (run.child && run.child.exitCode === null && run.child.signalCode === null) {
+      return json(response, 409, { error: "The Prime Agent process is still stopping" });
+    }
+    if (!run.sessionFile) return json(response, 409, { error: "No saved Prime Agent session is available" });
+    try {
+      if (!statSync(run.sessionFile).isFile()) throw new Error("Not a session file");
+      const header = JSON.parse(readFileSync(run.sessionFile, "utf8").split("\n", 1)[0]);
+      if (header.type !== "session" || header.id !== run.runtimeSessionId) throw new Error("Session identity mismatch");
+    } catch {
+      return json(response, 409, { error: "The saved Prime Agent session is missing or invalid" });
+    }
+    run.state = "running";
+    activeRuns.set(run.cwd, run);
+    try {
+      await execute(run, true);
+    } catch (error) {
+      finish(run, 1, "", error.message);
+      return json(response, 502, { error: error.message });
+    }
+  }
   run.state = "running";
+  run.noteId = randomUUID();
   run.child.stdin.write(`${JSON.stringify({ type: "prompt", message: value.prompt })}\n`);
   return json(response, 202, { state: run.state, sessionId: run.sessionId });
 }
 
 server.listen(port, host, () => {
   console.log(`Local Prime Agent executor listening on http://${host}:${port}`);
-  setInterval(() => void pickup(), 1500);
+  setInterval(() => {
+    for (const run of runs.values()) {
+      if (run.pendingReport && Date.now() >= run.pendingReport.retryAt) void flushReport(run);
+    }
+    void pickup();
+  }, 1500);
   void pickup();
 });
 
@@ -137,39 +173,68 @@ function workspaceFor(repositoryId) {
   return workspaces.find((workspace) => workspace.repositoryId === repositoryId) ?? null;
 }
 
-function execute(run) {
+async function execute(run, resume = false) {
+  run.starting = true;
   const childEnv = { ...process.env };
   for (const name of ["AK_LOCAL_EXECUTOR_TOKEN", "AK_LOCAL_AGENT_TOKEN"]) delete childEnv[name];
-  const child = spawn("prime-agent", ["--mode", "rpc", "--print", "--cwd", run.cwd], {
+  const child = spawn("prime-agent", ["--mode", "rpc", "--print", "--cwd", run.cwd, ...(resume ? ["--resume", run.sessionFile] : [])], {
     cwd: run.cwd,
     env: childEnv,
     shell: false,
     stdio: ["pipe", "pipe", "pipe"],
   });
   run.child = child;
-  child.stdin.write(`${JSON.stringify({ type: "set_session_name", name: `[kanban] #${run.taskNumber} ${run.sessionName}` })}\n`);
-  child.stdin.write(`${JSON.stringify({ type: "prompt", message: run.prompt })}\n`);
+  let readyResolve;
+  let readyReject;
+  const ready = new Promise((resolve, reject) => {
+    readyResolve = resolve;
+    readyReject = reject;
+  });
+  const timeout = setTimeout(() => readyReject(new Error("Prime Agent session startup timed out")), 25_000);
   let stdout = Buffer.alloc(0);
   let stderr = Buffer.alloc(0);
   let rpcBuffer = "";
-  let agentCompleted = false;
+  let completedNoteId = null;
   const collect = (current, chunk) => {
     const next = Buffer.concat([current, chunk]);
     if (next.length > maxOutputBytes) child.kill("SIGTERM");
     return next.subarray(0, maxOutputBytes);
   };
   child.stdout.on("data", (chunk) => {
+    if (run.child !== child) return;
     stdout = collect(stdout, chunk);
     rpcBuffer += chunk.toString("utf8");
     const records = rpcBuffer.split("\n");
     rpcBuffer = records.pop() ?? "";
     for (const record of records) {
       try {
-        if (JSON.parse(record).type === "agent_end") {
-          agentCompleted = true;
-          if (run.state === "running") {
-            run.state = "waiting_review";
-            void report(run, finalMessage(stdout) || "Prime Agent completed without a final message.", true);
+        const event = JSON.parse(record);
+        if (event.type === "response" && event.id === "kanban-state") {
+          if (
+            !event.success ||
+            typeof event.data?.sessionFile !== "string" ||
+            !isAbsolute(event.data.sessionFile) ||
+            typeof event.data.sessionId !== "string" ||
+            !event.data.sessionId ||
+            (resume &&
+              (event.data.sessionFile !== run.sessionFile ||
+                event.data.sessionId !== run.runtimeSessionId ||
+                event.data.isStreaming ||
+                event.data.isCompacting))
+          ) {
+            readyReject(new Error("Prime Agent did not restore the expected session"));
+          } else {
+            run.sessionFile = event.data.sessionFile;
+            run.runtimeSessionId = event.data.sessionId;
+            readyResolve();
+          }
+        }
+        if (event.type === "agent_end") {
+          const message = finalAssistantMessage(event.messages) ?? finalMessage(stdout.toString("utf8"));
+          if (run.state === "running" && message?.stopReason !== "error" && message?.stopReason !== "aborted") {
+            completedNoteId = run.noteId ?? run.runId;
+            run.state = "reporting";
+            void report(run, message?.text || "Prime Agent completed without a final message.", true);
           }
         }
       } catch {
@@ -178,14 +243,42 @@ function execute(run) {
     }
   });
   child.stderr.on("data", (chunk) => (stderr = collect(stderr, chunk)));
-  child.on("error", (error) => finish(run, 1, "", error.message));
-  child.on("close", (code) => finish(run, agentCompleted ? 0 : (code ?? 1), stdout.toString("utf8"), stderr.toString("utf8")));
+  child.stdin.on("error", (error) => {
+    readyReject(error);
+    if (run.child === child) finish(run, 1, "", error.message);
+  });
+  child.on("error", (error) => {
+    readyReject(error);
+    if (run.child === child) finish(run, 1, "", error.message);
+  });
+  child.on("close", (code) => {
+    readyReject(new Error("Prime Agent exited before its session was ready"));
+    if (run.child !== child) return;
+    run.child = null;
+    activeRuns.delete(run.cwd);
+    finish(run, completedNoteId === (run.noteId ?? run.runId) ? 0 : (code ?? 1), stdout.toString("utf8"), stderr.toString("utf8"));
+  });
+  child.stdin.write(`${JSON.stringify({ id: "kanban-state", type: "get_state" })}\n`);
+  try {
+    await ready;
+    if (!isRunning(child)) throw new Error("Prime Agent exited before its session was ready");
+    if (!resume) {
+      child.stdin.write(`${JSON.stringify({ type: "set_session_name", name: `[kanban] #${run.taskNumber} ${run.sessionName}` })}\n`);
+      child.stdin.write(`${JSON.stringify({ type: "prompt", message: run.prompt })}\n`);
+    }
+  } catch (error) {
+    child.kill("SIGTERM");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    run.starting = false;
+  }
 }
 
 function finish(run, exitCode, stdout, stderr) {
   if (run.state !== "running") return;
   run.state = exitCode === 0 ? "complete" : "failed";
-  activeRuns.delete(run.cwd);
+  if (!run.child || run.child.exitCode !== null || run.child.signalCode !== null) activeRuns.delete(run.cwd);
   const detail =
     exitCode === 0
       ? finalMessage(stdout) || "Prime Agent completed without a final message."
@@ -193,24 +286,56 @@ function finish(run, exitCode, stdout, stderr) {
   void report(run, detail, exitCode === 0);
 }
 
-async function report(run, detail, succeeded) {
+function report(run, detail, succeeded) {
+  run.pendingReport = { detail, succeeded, noteId: run.noteId ?? run.runId, retryAt: 0 };
+  return flushReport(run);
+}
+
+async function flushReport(run) {
+  if (!run.pendingReport || run.reporting) return;
+  run.reporting = true;
+  const pending = run.pendingReport;
   try {
     const note = await akFetch(`/api/tasks/${encodeURIComponent(run.taskId)}/notes`, run, {
       method: "POST",
-      headers: { "content-type": "application/json", "Idempotency-Key": JSON.stringify(`${run.runId}-note`) },
-      body: JSON.stringify({ detail }),
+      headers: { "content-type": "application/json", "Idempotency-Key": JSON.stringify(`${pending.noteId}-note`) },
+      body: JSON.stringify({ detail: pending.detail }),
     });
     if (!note.ok) throw new Error(`Task Note returned HTTP ${note.status}: ${await note.text()}`);
-    if (!succeeded) return;
-    const review = await akFetch(`/api/tasks/${encodeURIComponent(run.taskId)}`, run, {
-      method: "PATCH",
-      headers: { "content-type": "application/merge-patch+json" },
-      body: JSON.stringify({ status: "in-review" }),
-    });
-    if (!review.ok) throw new Error(`Task review submission returned HTTP ${review.status}: ${await review.text()}`);
+    if (pending.succeeded) {
+      const review = await akFetch(`/api/tasks/${encodeURIComponent(run.taskId)}`, run, {
+        method: "PATCH",
+        headers: { "content-type": "application/merge-patch+json" },
+        body: JSON.stringify({ status: "in-review" }),
+      });
+      if (!review.ok) {
+        const task = await akFetch(`/api/tasks/${encodeURIComponent(run.taskId)}`, run, { method: "GET" });
+        if (!task.ok || (await task.json()).status !== "in-review") {
+          throw new Error(`Task review submission returned HTTP ${review.status}: ${await review.text()}`);
+        }
+      }
+      run.state = "waiting_review";
+    }
+    run.pendingReport = null;
   } catch (error) {
-    console.error(`Local executor report failed: ${error}`);
+    pending.retryAt = Date.now() + 5_000;
+    console.error(`Local executor report failed; retrying: ${error}`);
+  } finally {
+    run.reporting = false;
   }
+}
+
+function finalAssistantMessage(messages) {
+  for (const message of [...(messages ?? [])].reverse()) {
+    if (message?.role !== "assistant") continue;
+    const text = message.content
+      ?.filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("\n")
+      .trim();
+    return { text, stopReason: message.stopReason };
+  }
+  return null;
 }
 
 function finalMessage(stdout) {
@@ -235,6 +360,7 @@ function finalMessage(stdout) {
 function akFetch(path, run, init) {
   return fetch(new URL(path, akOrigin), {
     ...init,
+    signal: AbortSignal.timeout(10_000),
     headers: {
       ...Object.fromEntries(new Headers(init.headers)),
       Authorization: `Bearer ${agentToken}`,
@@ -288,7 +414,7 @@ function json(response, status, body) {
 }
 
 function shutdown() {
-  active?.child?.kill("SIGTERM");
+  for (const run of activeRuns.values()) run.child?.kill("SIGTERM");
   server.close();
 }
 process.on("SIGINT", shutdown);
