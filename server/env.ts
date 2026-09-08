@@ -2,6 +2,7 @@ export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   AK_PUBLIC_ORIGIN: string;
+  AK_OFFLINE_MODE?: string;
   AK_SIGNING_KEY: string;
   OIDC_ISSUER: string;
   OIDC_WEB_CLIENT_ID: string;

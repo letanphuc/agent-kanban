@@ -135,6 +135,11 @@ values encoding exactly 32 bytes. GitHub App development additionally requires
 
 Public configuration and binding names live in [`wrangler.toml`](./wrangler.toml).
 
+For single-user offline development, set `AK_OFFLINE_MODE=true` with a loopback
+`AK_PUBLIC_ORIGIN`. AK then creates a local browser session without contacting
+Realmroot. The mode refuses non-loopback public and request URLs; Agent, Machine,
+Session, and GitHub flows that require Realmroot or Enbor remain unavailable.
+
 ## Agent usage
 
 Realmroot Toolbox uses generic, verb-first operations for ordinary resources:

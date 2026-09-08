@@ -1,9 +1,14 @@
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { useSession } from "@/lib/auth-client";
 
 export function AuthPage() {
   const [params] = useSearchParams();
+  const { data: session, isPending } = useSession();
   const error = params.get("error");
+
+  if (isPending) return null;
+  if (session) return <Navigate to="/" replace />;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-surface-primary px-6">

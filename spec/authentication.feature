@@ -11,6 +11,13 @@ Feature: OIDC sign-in and sessions
     And redirects to the currently configured Realmroot provider
     And offers no legacy credential sign-in method
 
+  @journey:authentication/localhost-offline-session @entrypoint:product-ui @proof:integration
+  Scenario: Use a local session while offline
+    Given offline mode and the public origin are configured for loopback
+    When a signed-out visitor opens Agent Kanban on loopback
+    Then AK creates an opaque local session without contacting the OIDC provider
+    And refuses offline authentication for non-loopback origins
+
   @journey:authentication/server-session @entrypoint:product-ui @proof:e2e
   Scenario: Keep browser authority in a server-side session
     Given the configured OIDC provider has authenticated a human
