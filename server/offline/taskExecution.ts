@@ -1,7 +1,7 @@
 import { getTask } from "@server/adapters/d1/taskRepo";
 import { d1TaskAssignmentRepository } from "@server/adapters/d1/tasks/d1TaskAssignments";
 import type { Env } from "@server/env";
-import { LOCAL_AGENT_ID, startLocalRun } from "@server/offline/executor";
+import { LOCAL_AGENT_ID, sendLocalMessage, startLocalRun } from "@server/offline/executor";
 import { replaceTaskAssignment } from "@server/usecases/tasks/replaceTaskAssignment";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -29,6 +29,9 @@ export async function runOfflineTask(c: Context<{ Bindings: Env }>): Promise<Res
     taskId,
     ownerId,
     prompt: taskPrompt(task),
+    repositoryId: task.repository_id,
+    sessionName: task.title,
+    taskNumber: task.seq,
   });
   return c.json({ runId: assignment.version, status: "running" }, 202);
 }
@@ -61,4 +64,16 @@ ${JSON.stringify(task.input, null, 2)}`
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+export async function continueOfflineTask(c: Context<{ Bindings: Env }>): Promise<Response> {
+  const ownerId = c.get("ownerId");
+  const taskId = c.req.param("taskId")!;
+  const task = await getTask(c.env.DB, taskId, ownerId);
+  if (!task) throw new HTTPException(404, { message: "Task not found" });
+  if (task.status !== "in_progress" || task.assigned_to !== LOCAL_AGENT_ID) {
+    throw new HTTPException(409, { message: "Only an in-progress local Task can be continued" });
+  }
+  await sendLocalMessage(c.env, { taskId, prompt: "continue" });
+  return c.json({ runId: task.session_binding?.runtime_session_id ?? task.id, status: "running" }, 202);
 }

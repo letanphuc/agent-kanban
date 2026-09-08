@@ -72,10 +72,6 @@ export function d1TaskCancellationRepository(db: D1): TaskCancellationRepository
               AND board_id IN (SELECT id FROM boards WHERE owner_id = ?)
               AND status IN ('todo', 'in_progress', 'in_review')
               AND transition_token IS NULL
-              AND NOT EXISTS (
-                SELECT 1 FROM task_review_decisions decision
-                WHERE decision.task_id = tasks.id AND decision.effect_state = 'pending'
-              )
               ${input.expectedTaskVersion !== undefined ? "AND version = ?" : ""}
           `)
           .bind(

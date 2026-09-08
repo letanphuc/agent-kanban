@@ -11,6 +11,7 @@ import { useBoard } from "@/features/boards/hooks/useBoard";
 import { OfflineTaskDialog } from "@/features/tasks/components/OfflineTaskDialog";
 import { TaskChatDrawer } from "@/features/tasks/components/TaskChatDrawer";
 import { TaskDetail } from "@/features/tasks/components/TaskDetail";
+import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
 
 const TASK_STATUSES = ["todo", "in_progress", "in_review", "done", "cancelled"] as const;
@@ -26,7 +27,7 @@ const TASK_STATUS_LABELS: Record<string, string> = {
 export function BoardPage() {
   const { boardId } = useParams<{ boardId: string }>();
   const { board, loading, error, refresh } = useBoard(boardId);
-  const { data: session } = useSession();
+  useSession();
   const avatars = useAgentPresence(boardId);
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
   const [creatingTask, setCreatingTask] = useState(false);
@@ -34,6 +35,11 @@ export function BoardPage() {
   const [activeRepository, setActiveRepository] = useState<string | null>(null);
   const [activeLabel, setActiveLabel] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState(0);
+
+  async function cancelTask(taskId: string) {
+    await api.tasks.cancel(taskId);
+    await refresh();
+  }
 
   const repositories = useMemo(() => {
     if (!board?.tasks) return [];
@@ -97,14 +103,12 @@ export function BoardPage() {
   return (
     <div className="h-screen overflow-hidden bg-surface-primary flex flex-col">
       <Header />
-      {session?.offline && (
-        <div className="flex justify-end border-b border-border px-5 py-2.5">
-          <Button size="sm" onClick={() => setCreatingTask(true)}>
-            <Plus className="size-3.5" />
-            Create Task
-          </Button>
-        </div>
-      )}
+      <div className="flex justify-end border-b border-border px-5 py-2.5">
+        <Button size="sm" onClick={() => setCreatingTask(true)}>
+          <Plus className="size-3.5" />
+          Create Task
+        </Button>
+      </div>
       <FilterBar
         repositories={repositories}
         labels={board.labels ?? []}
@@ -141,7 +145,14 @@ export function BoardPage() {
       {/* Desktop: 5-column grid */}
       <div className="hidden md:grid flex-1 overflow-hidden" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}>
         {columns.map((col) => (
-          <KanbanColumn key={col.status} column={col} labels={board.labels ?? []} onTaskClick={setSelectedTask} onAgentClick={setChatTask} />
+          <KanbanColumn
+            key={col.status}
+            column={col}
+            labels={board.labels ?? []}
+            onTaskClick={setSelectedTask}
+            onAgentClick={setChatTask}
+            onCancel={cancelTask}
+          />
         ))}
       </div>
 
@@ -150,7 +161,14 @@ export function BoardPage() {
         {columns
           .filter((_, i) => i === mobileTab)
           .map((col) => (
-            <KanbanColumn key={col.status} column={col} labels={board.labels ?? []} onTaskClick={setSelectedTask} onAgentClick={setChatTask} />
+            <KanbanColumn
+              key={col.status}
+              column={col}
+              labels={board.labels ?? []}
+              onTaskClick={setSelectedTask}
+              onAgentClick={setChatTask}
+              onCancel={cancelTask}
+            />
           ))}
       </div>
 

@@ -117,15 +117,16 @@ export function TaskDetail({ taskId, labels = [], onClose, onRefresh, onAgentCli
     await queryClient.invalidateQueries({ queryKey: ["task", taskId] });
   }
 
-  async function handleReviewAction(action: "reject" | "complete") {
+  async function handleReviewAction(action: "reject" | "complete" | "cancel") {
     if (action === "reject") await api.tasks.reject(taskId);
-    else await api.tasks.complete(taskId);
+    else if (action === "complete") await api.tasks.complete(taskId);
+    else await api.tasks.cancel(taskId);
     await reload();
     onRefresh();
   }
 
   const localRun = useMutation({
-    mutationFn: () => api.offline.runTask(taskId),
+    mutationFn: () => (task?.status === "in_progress" ? api.offline.continueTask(taskId) : api.offline.runTask(taskId)),
     onSuccess: async () => {
       await reload();
       onRefresh();
@@ -184,6 +185,12 @@ export function TaskDetail({ taskId, labels = [], onClose, onRefresh, onAgentCli
           <span className="text-sm font-medium text-accent">{TASK_STATUS_LABELS[task.status] || task.status}</span>
         </div>
         <Field label="Assigned to" value={agentDisplay} />
+        {task.session_binding && (
+          <Field
+            label="Session"
+            value={<span className="font-mono text-[13px] text-content-secondary">{task.session_binding.runtime_session_id}</span>}
+          />
+        )}
         <Field
           label="PR"
           value={
@@ -219,18 +226,40 @@ export function TaskDetail({ taskId, labels = [], onClose, onRefresh, onAgentCli
         />
       </div>
 
-      {session?.offline && (task.status === "todo" || (task.status === "in_progress" && task.assigned_to === "local-prime-agent")) && (
-        <div className="space-y-2">
-          <Button size="sm" disabled={localRun.isPending || task.blocked} onClick={() => localRun.mutate()}>
-            {localRun.isPending ? "Starting Prime Agent…" : task.status === "in_progress" ? "Retry Local Run" : "Run with Prime Agent"}
-          </Button>
-          {localRun.error && (
-            <p role="alert" className="text-sm text-error">
-              {localRun.error.message}
-            </p>
-          )}
-        </div>
-      )}
+      {(session?.offline || task.assigned_to === "local-prime-agent") &&
+        (task.status === "todo" || (task.status === "in_progress" && task.assigned_to === "local-prime-agent")) && (
+          <div className="space-y-2">
+            <Button size="sm" disabled={localRun.isPending || task.blocked} onClick={() => localRun.mutate()}>
+              {localRun.isPending ? "Starting Prime Agent…" : task.status === "in_progress" ? "Continue with Prime Agent" : "Run with Prime Agent"}
+            </Button>
+            {localRun.error && (
+              <p role="alert" className="text-sm text-error">
+                {localRun.error.message}
+              </p>
+            )}
+          </div>
+        )}
+
+      <label className="block text-[12px] text-content-secondary">
+        Workspace
+        <select
+          aria-label="Workspace"
+          className="mt-1 w-full rounded-md border border-border bg-surface-primary px-2 py-1.5 text-[13px]"
+          value={task.repository_id ?? ""}
+          onChange={async (event) => {
+            await api.tasks.update(taskId, { repositoryId: event.target.value || null });
+            await reload();
+            onRefresh();
+          }}
+        >
+          <option value="">No workspace</option>
+          {repositories.map((repository: any) => (
+            <option key={repository.id} value={repository.id}>
+              {repository.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {task.status === "in_review" && (
         <div className="flex gap-2">

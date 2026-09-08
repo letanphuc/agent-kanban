@@ -7,7 +7,12 @@ const PROFILE_STALE_TIME_MS = 60_000;
 const DISCOVERY_STALE_TIME_MS = 15 * 60_000;
 
 export function useAgentProfile(subject: string | null | undefined) {
-  const localProfile = useContext(LocalAgentProfiles)[subject ?? ""];
+  const configuredProfile = useContext(LocalAgentProfiles)[subject ?? ""];
+  const localProfile =
+    configuredProfile ??
+    (subject === "local-prime-agent"
+      ? { subject, name: "Local Prime Agent", username: "local-prime-agent", picture: "", runtime: "prime-agent" }
+      : undefined);
   const discovery = useQuery({
     queryKey: ["agent-profile-discovery"],
     queryFn: ({ signal }) => discoverAgentProfile(signal),

@@ -105,7 +105,6 @@ async function createOfflineSession(c: Context<{ Bindings: Env }>): Promise<{ se
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(tenant_id, subject_id) DO UPDATE SET email = excluded.email, name = excluded.name, role = excluded.role`,
     ).bind(session.tenantId, session.subjectId, session.email, session.name, session.role),
-    c.env.DB.prepare("DELETE FROM realmroot_web_sessions WHERE tenant_id = ? AND subject_id = ?").bind(session.tenantId, session.subjectId),
     c.env.DB.prepare(
       `INSERT INTO realmroot_web_sessions
          (id, token_hash, tenant_id, subject_id, email, name, role, scopes_json, csrf_token, expires_at)
@@ -146,7 +145,7 @@ function safeReturnTo(value: string | undefined): string {
 }
 
 function sessionCookie(value: string, maxAge: number): string {
-  return `${SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+  return `${SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
 function randomToken(bytes = 32): string {

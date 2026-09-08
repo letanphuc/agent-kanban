@@ -30,7 +30,9 @@ export function TaskChatDrawer({ open, onOpenChange, taskId, task, showOverlay =
   const profile = useAgentProfile(currentTask?.assigned_to).data;
   const agentName = profile?.name ?? currentTask?.assignee_name ?? currentTask?.assigned_to ?? "agent";
 
-  if (!taskId) return null;
+  // A closed Sheet still renders its children. Do not create the session observer
+  // until the user explicitly opens task chat.
+  if (!taskId || !open) return null;
 
   // The bound runtime Session is the sole source for task chat.
   const hasRuntimeSession = !!currentTask?.session_binding;

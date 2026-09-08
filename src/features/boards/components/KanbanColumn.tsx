@@ -7,6 +7,7 @@ interface KanbanColumnProps {
   labels?: { name: string; color: string; description: string }[];
   onTaskClick: (taskId: string) => void;
   onAgentClick?: (task: any) => void;
+  onCancel?: (taskId: string) => void;
 }
 
 const COLUMN_ICONS: Record<string, typeof Circle> = {
@@ -17,7 +18,7 @@ const COLUMN_ICONS: Record<string, typeof Circle> = {
   cancelled: Ban,
 };
 
-export function KanbanColumn({ column, labels = [], onTaskClick, onAgentClick }: KanbanColumnProps) {
+export function KanbanColumn({ column, labels = [], onTaskClick, onAgentClick, onCancel }: KanbanColumnProps) {
   const Icon = COLUMN_ICONS[column.status] ?? Circle;
 
   return (
@@ -43,7 +44,7 @@ export function KanbanColumn({ column, labels = [], onTaskClick, onAgentClick }:
                 transition={{ duration: 0.25, layout: { duration: 0.3 } }}
                 className="mb-2"
               >
-                <TaskCard task={task} labels={labels} onClick={() => onTaskClick(task.id)} onAgentClick={onAgentClick} />
+                <TaskCard task={task} labels={labels} onClick={() => onTaskClick(task.id)} onAgentClick={onAgentClick} onCancel={onCancel} />
               </motion.div>
             ))}
           </AnimatePresence>

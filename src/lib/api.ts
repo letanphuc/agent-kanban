@@ -181,6 +181,7 @@ export const api = {
       return request<void>("DELETE", `/tasks/${id}`, undefined, { "If-Match": etag });
     },
     complete: (id: string) => patchTask(id, { status: "done" }).then(fromTask),
+    cancel: (id: string) => patchTask(id, { status: "cancelled" }).then(fromTask),
     reject: (id: string, reason?: string) => patchTask(id, { status: "in-progress", ...(reason ? { statusReason: reason } : {}) }).then(fromTask),
     addNote: (id: string, detail: string) => request<any>("POST", `/tasks/${id}/notes`, { detail }).then(fromTaskNote),
     getNotes: (id: string, since?: string) => {
@@ -228,6 +229,7 @@ export const api = {
   },
   offline: {
     runTask: (id: string) => request<{ runId: string; status: string }>("POST", `/offline/tasks/${encodeURIComponent(id)}/run`),
+    continueTask: (id: string) => request<{ runId: string; status: string }>("POST", `/offline/tasks/${encodeURIComponent(id)}/continue`),
   },
   machines: {
     list: (params?: { pageSize?: number; pageToken?: string }) => {

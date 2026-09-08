@@ -122,6 +122,26 @@ function hasBody(log: any): boolean {
   return bodyActions.has(log.action) && !!log.detail;
 }
 
+function taskSummary(detail: string | null | undefined): string | null | undefined {
+  if (!detail?.startsWith('{"type":"response"')) return detail;
+  let final = "";
+  for (const line of detail.split("\n")) {
+    try {
+      const event = JSON.parse(line);
+      if (event.type !== "message_end" || event.message?.role !== "assistant") continue;
+      final =
+        event.message.content
+          ?.filter((part: { type?: string }) => part.type === "text")
+          .map((part: { text?: string }) => part.text ?? "")
+          .join("\n")
+          .trim() ?? final;
+    } catch {
+      // The old runner stored its JSONL trace as one Task Note.
+    }
+  }
+  return final || "Prime Agent completed. The full local trace remains in its saved session.";
+}
+
 export function ActivityLog({ initialNotes, sseNotes, reconnecting }: ActivityLogProps) {
   const displayed = (() => {
     const seen = new Set<string>();
@@ -148,34 +168,36 @@ export function ActivityLog({ initialNotes, sseNotes, reconnecting }: ActivityLo
           <div className="absolute left-3.5 top-0 bottom-0 w-px bg-border" />
 
           {displayed.map((log: any) => {
-            const { actionText, suffix } = buildSentence(log);
+            const detail = taskSummary(log.detail);
+            const displayLog = detail === log.detail ? log : { ...log, detail };
+            const { actionText, suffix } = buildSentence(displayLog);
             const dot = dotColors[log.action] || "bg-zinc-500 border-zinc-500/30";
             const actionColor = actionStyles[log.action] || "text-content-secondary";
-            const body = hasBody(log);
+            const body = hasBody(displayLog);
 
             return (
               <div key={log.id} className="relative flex gap-3 pb-4">
                 <div className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center">
-                  {body ? <NoteAvatar log={log} /> : <span className={`w-2.5 h-2.5 rounded-full border ${dot}`} />}
+                  {body ? <NoteAvatar log={displayLog} /> : <span className={`w-2.5 h-2.5 rounded-full border ${dot}`} />}
                 </div>
 
                 <div className="min-w-0 flex-1">
                   {body ? (
                     <div className="overflow-hidden rounded-md border border-border bg-surface-secondary">
                       <div className="flex items-center gap-1.5 border-b border-border bg-surface-tertiary px-3 py-2 text-[12px]">
-                        <ActorLabel log={log} body />
+                        <ActorLabel log={displayLog} body />
                         <span className={actionColor}>{actionText}</span>
                         <span className="ml-auto font-mono text-[10px] text-content-tertiary whitespace-nowrap">
                           {formatRelative(log.created_at)}
                         </span>
                       </div>
                       <div className="px-3 py-2.5">
-                        <MarkdownBody>{log.detail}</MarkdownBody>
+                        <MarkdownBody>{detail ?? ""}</MarkdownBody>
                       </div>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 min-h-7 text-[12px] leading-snug">
-                      <ActorLabel log={log} body={false} />
+                      <ActorLabel log={displayLog} body={false} />
                       <span className={actionColor}>{actionText}</span>
                       {suffix && <span className="text-content-tertiary">{suffix}</span>}
                       <span className="ml-auto font-mono text-[10px] text-content-tertiary whitespace-nowrap">{formatRelative(log.created_at)}</span>

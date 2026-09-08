@@ -1,4 +1,5 @@
 import dayjs from "dayjs";
+import { XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { AgentAvatar, useAgentProfile } from "@/features/agent-identity";
 import { LabelChip } from "@/features/boards/components/LabelChip";
@@ -9,10 +10,11 @@ interface TaskCardProps {
   labels?: { name: string; color: string; description: string }[];
   onClick: () => void;
   onAgentClick?: (task: any) => void;
+  onCancel?: (taskId: string) => void;
   isNew?: boolean;
 }
 
-export function TaskCard({ task, labels = [], onClick, onAgentClick, isNew }: TaskCardProps) {
+export function TaskCard({ task, labels = [], onClick, onAgentClick, onCancel, isNew }: TaskCardProps) {
   const isAssigned = !!task.assigned_to;
   const isWorking = isAssigned && task.status === "in_progress" && !task.glow_suppressed;
   const profile = useAgentProfile(task.assigned_to).data;
@@ -53,6 +55,20 @@ export function TaskCard({ task, labels = [], onClick, onAgentClick, isNew }: Ta
     >
       <div className="w-full min-w-0 text-left">
         <div className="flex items-start gap-1.5">
+          {!["done", "cancelled"].includes(task.status) && (
+            <button
+              type="button"
+              className="-ml-1 -mt-1 rounded p-1 text-error hover:bg-error/10"
+              onClick={(event) => {
+                event.stopPropagation();
+                onCancel?.(task.id);
+              }}
+              aria-label={`Cancel task #${task.seq}`}
+              title="Cancel task"
+            >
+              <XCircle className="size-3.5" />
+            </button>
+          )}
           <span className="font-mono text-[11px] leading-snug text-content-tertiary shrink-0">#{task.seq}</span>
           <div className="line-clamp-2 text-[13px] font-medium leading-snug text-content-primary flex-1 min-w-0" title={task.title}>
             {task.title}

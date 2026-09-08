@@ -19,7 +19,19 @@ export async function executorHealth(env: Env): Promise<ExecutorHealth | null> {
   }
 }
 
-export async function startLocalRun(env: Env, input: { runId: string; taskId: string; ownerId: string; prompt: string }): Promise<void> {
+export async function startLocalRun(
+  env: Env,
+  input: {
+    runId: string;
+    taskId: string;
+    ownerId: string;
+    prompt: string;
+    repositoryId: string | null;
+    sessionName: string;
+    taskNumber: number;
+    continueRun?: boolean;
+  },
+): Promise<void> {
   const response = await executorFetch(env, `/v1/tasks/${encodeURIComponent(input.taskId)}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
@@ -29,6 +41,15 @@ export async function startLocalRun(env: Env, input: { runId: string; taskId: st
     const body = (await response.json().catch(() => null)) as { error?: string } | null;
     throw new Error(body?.error ?? `Local executor returned HTTP ${response.status}`);
   }
+}
+
+export async function sendLocalMessage(env: Env, input: { taskId: string; prompt: string }): Promise<void> {
+  const response = await executorFetch(env, `/v1/tasks/${encodeURIComponent(input.taskId)}/message`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(`Local executor returned HTTP ${response.status}`);
 }
 
 export function localAgent(requestUrl: string, online: boolean) {

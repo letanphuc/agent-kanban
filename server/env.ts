@@ -7,6 +7,8 @@ export interface Env {
   AK_LOCAL_EXECUTOR_TOKEN?: string;
   AK_LOCAL_AGENT_TOKEN?: string;
   AK_LOCAL_WORKTREE?: string;
+  /** JSON array of { repositoryId, cwd } entries used by the local scheduler. */
+  AK_LOCAL_WORKSPACES?: string;
   AK_SIGNING_KEY: string;
   OIDC_ISSUER: string;
   OIDC_WEB_CLIENT_ID: string;
